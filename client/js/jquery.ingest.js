@@ -84,19 +84,17 @@
       this.fingerprint(function() {
         url.pathname = '/transfers/'+this.id+'/events';
         eventsource = new EventSource(url.href);
-        eventsource.addEventListener('open', this.announceAvailable.bind(this));
         eventsource.addEventListener('message', function(e) {
           var json = JSON.parse(e.data);
-          console.log("got json", json);
+          this.handleMessage(json);
         }.bind(this));
+        callback(this);
       }.bind(this));
     },
 
-    /* Announce to endpoint that this file is available.
-     * Kicks off the one-way sync operation. */
-    announceAvailable: function() {
-      console.log("available");
-      // post some metadata? 
+    /* Handle JSON coming from the ingest server */
+    handleMessage: function(json) {
+      console.log("got json", json);
     },
 
     /* Sets this.id to a string value based on name, head and tail chunks.
