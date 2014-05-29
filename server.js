@@ -1,5 +1,5 @@
 var PORT = process.env.port || 1337;
-var md5 = require("./common/md5").md5;
+var SparkMD5 = require("./common/md5");
 var http = require("http");
 var url  = require("url");
 var fs = require('fs');
@@ -44,25 +44,19 @@ Requestor.prototype = {
   },
 
   /* Accept a chunk from the multipart request object */
-  receiveChunk: function(chunkNumber, chunkMd5, req, done) {
+  receiveChunk: function(chunkNumber, targetMd5, req, done) {
     var m = RE_BOUNDARY.exec(req.headers['content-type']);
     var d = new Dicer({ boundary: m[1] || m[2] });
     var writeStream = fs.createWriteStream(this.bin);
-
+    var spark = new SparkMD5();
     d.on('part', function(p) {
       p.pipe(writeStream);
       p.on('data', function(data) {
-        console.log("Start Data");
-        console.log(md5(data));
-        console.log("End Data");
-      });
-      p.on('end', function() {
-        //console.log('End of part\n');
+        spark.append(data);
       });
     });
     d.on('finish', function() {
-      console.log(chunkMd5);
-      done();
+      done(spark.end() === targetMd5);
     });
     req.pipe(d);
   },
@@ -79,8 +73,12 @@ var routes = {
   chunks: /^\/transfers\/(.+)\/chunks\/(\d+)\/(.+)$/
 };
 http.createServer(function (req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   var parsedURL = url.parse(req.url);
   var pathname = parsedURL.pathname;
+  console.log(pathname);
   var match = null;
   if ((match = pathname.match(routes.chunks)) && req.method === "POST") {
     var id = match[1];
@@ -89,25 +87,23 @@ http.createServer(function (req, res) {
     var rx = requestors[match[1]];
     if (rx === null) { res.writeHead(500); res.end(); }
     else {
-      rx.receiveChunk(chunkNumber, chunkMd5, req, function() {
-        res.writeHead(200, {
-          "Content-Type":"text/plain",
-          "Cache-Control":"no-cache",
-          "Access-Control-Allow-Origin":"*",
-          "Access-Control-Allow-Methods":"GET,PUT,POST,DELETE",
-          "Access-Control-Allow-Headers":"Content-Type",
-        });
-        res.end('OK');
+      rx.receiveChunk(chunkNumber, chunkMd5, req, function(checksumOK) {
+        if (checksumOK) {
+          res.statusCode = 204
+          res.end();
+        } else {
+          res.writeHead(406, {
+            "Content-Type":"application/json",
+          });
+          res.end(JSON.stringify({ status: "checksum mismatch" }));
+        }
       });
     }
   } else if ((match = pathname.match(routes.events)) && req.method === "GET") {
     res.writeHead(200, {
       "Content-Type":"text/event-stream",
       "Cache-Control":"no-cache",
-      "Connection":"keep-alive",
-      "Access-Control-Allow-Origin":"*",
-      "Access-Control-Allow-Methods":"GET,PUT,POST,DELETE",
-      "Access-Control-Allow-Headers":"Content-Type",
+      "Connection":"keep-alive"
     });
     res.write("retry: 1000\n");
     var id = match[1];

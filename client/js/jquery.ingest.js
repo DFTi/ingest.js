@@ -169,4 +169,8 @@
     });
   };
 
+  var md5 = function(input) {
+    return SparkMD5.hash(input);
+  };
+
 })( jQuery, window, document );
