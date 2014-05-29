@@ -83,9 +83,10 @@
   }
 
   FileTransfer.prototype = {
+    /* Fingerprint the file and callback with +this+ */
     init: function(callback) {
       this.numChunks = Math.ceil(this.file.size / this.chunkSize);
-      this.identify(callback);
+      this.fingerprint(callback);
       this.announceAvailable();
     },
 
@@ -97,7 +98,7 @@
 
     /* Sets this.id to a string value based on name, head and tail chunks.
      * Returns +this+ via callback */
-    identify: function(callback) {
+    fingerprint: function(callback) {
       var lastChunk = this.numChunks;
       var name = this.file.name;
       var done = function(first, last) {
