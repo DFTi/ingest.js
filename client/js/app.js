@@ -1,6 +1,6 @@
 $(function() {
   $('input#ingest[type=file]').ingest({
-    endpoint: "http://localhost:3000/ingest",
+    endpoint: "http://localhost:1337/",
     progress: function(tx, percent) {
       console.log(percent);
     },
