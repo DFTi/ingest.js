@@ -1,4 +1,5 @@
 var PORT = process.env.port || 1337;
+var Buffer = require('buffer').Buffer;
 var SparkMD5 = require("./common/md5");
 var http = require("http");
 var url  = require("url");
@@ -13,11 +14,12 @@ var CHUNKSIZE = 32768;
 
 var requestors = {};
 
-var Requestor = function(id, res) {
+var Requestor = function(id, numChunks, res) {
   this.id = id;
   this.bin = path.join(tempDirectory, this.id+".bin");
   this.json = path.join(tempDirectory, this.id+".json");
   this.res = res;
+  this.numChunks = numChunks;
   this.init();
 };
 
@@ -25,40 +27,59 @@ Requestor.prototype = {
   init: function() {
     fs.stat(this.bin, function(err, stats) {
       if (err) {
+        // the file doesn't exist
+        // create it and request the first chunk
+        fs.closeSync(fs.openSync(this.bin, 'w')); // touch and truncate
+        console.log("Created empty "+this.bin);
         this.requestChunk(1);
       } else {
-        console.log("it exists", stats);
-        //    foreach chunk emit progress
-        //    any missing chunks?
-        //      no? file is done
-        //      yes? 
+        console.log("File exist "+this.bin);
+        // the file exists
+        // report the md5 for each chunk that we have
+        this.eachChunk(function(blob) {
+          var localChecksum = spark.hash(blob);
+          this.reportLocalChecksum(localChecksum);
+        });
       }
     }.bind(this));
+  },
+
+  /* Iterate over all the chunks we have saved locally */
+  eachChunk: function() {
+    fs.open(this.bin, 'r', function(err, fd) {
+      console.log("opened the bin");
+    });
   },
 
   /* Request a single chunk.
    * Chunk numbers are not 0-based index. */
   requestChunk: function(chunkNumber) {
-    console.log("requesting chunk "+chunkNumber);
-    this._emit("sendChunk", chunkNumber );
+    console.log("Requesting chunk "+chunkNumber);
+    this._emit("sendChunk", chunkNumber);
   },
 
-  /* Accept a chunk from the multipart request object */
+  /* Accept a chunk from the multipart request object
+   * write it to the binary at the correct place and
+   * callback true or false telling if md5 matched */
   receiveChunk: function(chunkNumber, targetMd5, req, done) {
+    console.log("Receiving chunk "+chunkNumber);
     var m = RE_BOUNDARY.exec(req.headers['content-type']);
     var d = new Dicer({ boundary: m[1] || m[2] });
-    var writeStream = fs.createWriteStream(this.bin);
-    var spark = new SparkMD5();
-    d.on('part', function(p) {
-      p.pipe(writeStream);
-      p.on('data', function(data) {
-        spark.append(data);
+    var buffer = null;
+    fs.open(this.bin, 'r+', function(err, fd) {
+      var spark = new SparkMD5();
+      d.on('part', function(p) {
+        p.on('data', function(data) {
+          buffer = data;
+          spark.append(buffer);
+        });
       });
+      d.on('finish', function() {
+        fs.closeSync(fd);
+        done(spark.end() === targetMd5);
+      });
+      req.pipe(d);
     });
-    d.on('finish', function() {
-      done(spark.end() === targetMd5);
-    });
-    req.pipe(d);
   },
 
   _emit: function(event, data) {
@@ -69,7 +90,7 @@ Requestor.prototype = {
 };
 
 var routes = {
-  events: /^\/transfers\/(.+)\/events$/,
+  events: /^\/transfers\/(.+)\/(\d+)\/events$/,
   chunks: /^\/transfers\/(.+)\/chunks\/(\d+)\/(.+)$/
 };
 http.createServer(function (req, res) {
@@ -88,15 +109,8 @@ http.createServer(function (req, res) {
     if (rx === null) { res.writeHead(500); res.end(); }
     else {
       rx.receiveChunk(chunkNumber, chunkMd5, req, function(checksumOK) {
-        if (checksumOK) {
-          res.statusCode = 204
-          res.end();
-        } else {
-          res.writeHead(406, {
-            "Content-Type":"application/json",
-          });
-          res.end(JSON.stringify({ status: "checksum mismatch" }));
-        }
+        res.statusCode = (checksumOK ? 204 : 406);
+        res.end();
       });
     }
   } else if ((match = pathname.match(routes.events)) && req.method === "GET") {
@@ -107,8 +121,9 @@ http.createServer(function (req, res) {
     });
     res.write("retry: 1000\n");
     var id = match[1];
+    var numChunks = match[2];
     requestors[id] = null;
-    requestors[id] = new Requestor(id, res);
+    requestors[id] = new Requestor(id, numChunks, res);
     req.connection.addListener("close", function() {
       requestors[id] = null;
     });
