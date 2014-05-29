@@ -10,7 +10,7 @@ var Requestor = function(options, res) {
   this.id = options.id;
   this.bin = path.join(options.tmp, this.id+".bin");
   this.res = res;
-  this.numChunks = options.numChunks;
+  this.numChunks = parseInt(options.numChunks);
   this.init();
 };
 
@@ -27,19 +27,43 @@ Requestor.prototype = {
         console.log("File exist "+this.bin);
         // the file exists
         // report the md5 for each chunk that we have
-        this.eachChunk(function(blob) {
-          var localChecksum = spark.hash(blob);
-          this.reportLocalChecksum(localChecksum);
-        });
+        this.eachChunk(function(err, chunkNumber, blob) {
+          if (err) {
+            console.log("err");
+            this.requestChunk(chunkNumber);
+          } else {
+            console.log("verify");
+            this._emit("verifyChunk", {
+              checkSum: SparkMD5.hash(blob),
+              chunkNumber: chunkNumber
+            });
+          }
+        }.bind(this));
       }
     }.bind(this));
   },
 
-  /* Iterate over all the chunks we have saved locally */
-  eachChunk: function() {
-    fs.open(this.bin, 'r', function(err, fd) {
-      console.log("opened the bin");
+  /* Takes a file descriptor, a chunk number, and a callback
+   * Calls back with error, chunkNumber, buffer */
+  returnChunk: function(fd, chunkNumber, callback) {
+    var buffer = new Buffer(CHUNKSIZE);
+    var start = (chunkNumber-1) * CHUNKSIZE;
+    fs.read(fd, buffer, 0, CHUNKSIZE, start, function(err, bytesRead, buff) {
+      if (err) {
+        callback(err, chunkNumber, null);
+      } else {
+        callback(null, chunkNumber, buff);
+      } 
     });
+  },
+
+  /* Iterate over all the chunks we have saved locally
+   * and callback with the buffer and index */
+  eachChunk: function(callback) {
+    fs.open(this.bin, 'r', function(err, fd) {
+      for (var i = 1, l = this.numChunks; i <= l; i ++)
+        this.returnChunk(fd, i, callback);
+    }.bind(this));
   },
 
   /* Request a single chunk.
@@ -66,6 +90,7 @@ Requestor.prototype = {
         });
       });
       d.on('finish', function() {
+        // write to file
         fs.closeSync(fd);
         done(spark.end() === targetMd5);
       });
@@ -75,7 +100,7 @@ Requestor.prototype = {
 
   _emit: function(event, data) {
     this.res.write("event: "+event+"\n");
-    var str = (typeof(data) === "object" ? JSON.stringify(json) : data);
+    var str = (typeof(data) === "object" ? JSON.stringify(data) : data);
     this.res.write("data: "+str+"\n\n");
   }
 };
