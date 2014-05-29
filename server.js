@@ -47,12 +47,14 @@ Requestor.prototype = {
   receiveChunk: function(chunkNumber, chunkMd5, req, done) {
     var m = RE_BOUNDARY.exec(req.headers['content-type']);
     var d = new Dicer({ boundary: m[1] || m[2] });
-    //var writeStream = fs.createWriteStream(this.bin);
+    var writeStream = fs.createWriteStream(this.bin);
 
     d.on('part', function(p) {
-      //console.log('New part!');
+      p.pipe(writeStream);
       p.on('data', function(data) {
-        console.log(data[0]);
+        console.log("Start Data");
+        console.log(md5(data));
+        console.log("End Data");
       });
       p.on('end', function() {
         //console.log('End of part\n');
