@@ -13,8 +13,6 @@ var Requestor = function(id, res) {
   this.bin = path.join(tempDirectory, this.id+".bin");
   this.json = path.join(tempDirectory, this.id+".json");
   this.res = res;
-//    res.write("event: message\n");
-//    res.write("data: "+JSON.stringify({foo: "bar"})+"\n\n");
   this.init();
 };
 
@@ -22,8 +20,7 @@ Requestor.prototype = {
   init: function() {
     fs.stat(this.bin, function(err, stats) {
       if (err) {
-        console.log("it does not exist");
-        //   no? request some chunks
+        this.requestChunk(1);
       } else {
         console.log("it exists", stats);
         //    foreach chunk emit progress
@@ -31,12 +28,25 @@ Requestor.prototype = {
         //      no? file is done
         //      yes? 
       }
-    })
+    }.bind(this));
+  },
+
+  /* Request a single chunk.
+   * Chunk numbers are not 0-based index. */
+  requestChunk: function(chunkNumber) {
+    console.log("requesting chunk "+chunkNumber);
+    this._emit("sendChunk", chunkNumber );
   },
 
   /* Accept a chunk from the multipart request object */
   receiveChunk: function(chunkNumber, req) {
-    console.log("receivechunk", chunkNumber, req);
+    console.log("receive chunk ", chunkNumber, req);
+  },
+
+  _emit: function(event, data) {
+    this.res.write("event: "+event+"\n");
+    var str = (typeof(data) === "object" ? JSON.stringify(json) : data);
+    this.res.write("data: "+str+"\n\n");
   }
 };
 
@@ -49,6 +59,7 @@ http.createServer(function (req, res) {
   var pathname = parsedURL.pathname;
   var match = null;
   if (match = pathname.match(routes.chunks)) {
+    console.log("receiving chunk?");
     var id = match[1];
     var rx = requestors[match[1]];
     rx.receiveChunk(match[2], req);
