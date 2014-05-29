@@ -57,8 +57,12 @@
         eventsource.addEventListener('verifyChunk', function(e) {
           var data = JSON.parse(e.data);
           this.verifyChunk(data.chunkNumber, data.checkSum, function(checkSumOK) {
-            console.log(checkSumOK);
-          });
+            if (checkSumOK) {
+              // progress +1
+            } else {
+              this.sendChunk(data.chunkNumber);
+            }
+          }.bind(this));
         }.bind(this));
         callback(this);
       }.bind(this));
@@ -91,8 +95,9 @@
       }.bind(this));
     },
 
-    /* Handle chunk requests from the server */
-    sendChunk: function(e) {
+    /* Send a chunk to the server via HTTP POST
+     * Chunk number is not 0-based index; 1 is the first chunk */
+    sendChunk: function(chunkNumber) {
       var url = URL(this.endpoint);
       var blob = this.getChunk(chunkNumber);
       this.readChunk(blob, function(data) {
