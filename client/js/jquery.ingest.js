@@ -96,10 +96,9 @@
       var blob = this.getChunk(num);
       var formData = new FormData();
       var url = URL(this.endpoint);
-      url.pathname = '/transfers/'+this.id+'/chunks/'+num;
       this.md5Chunk(num, function(md5sum) {
+        url.pathname = '/transfers/'+this.id+'/chunks/'+num+'/'+md5sum;
         formData.append('data', blob);
-        formData.append('md5sum', md5sum);
         $.ajax({
           url: url.href,
           type: 'post',
@@ -113,7 +112,7 @@
             console.log("failed to deliver chunk "+num);
           }
         });
-      });
+      }.bind(this));
     },
 
     /* Sets this.id to a string value based on name, head and tail chunks.
