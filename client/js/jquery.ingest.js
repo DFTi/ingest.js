@@ -72,19 +72,65 @@
     addFile: function(file) {
       var transfer = new FileTransfer(file, this.options);
       // Callback for UI purposes
-      this.options.add(transfer);
+      transfer.init(this.options.add);
     }
   };
 
   /* Represents a file transfer */
   function FileTransfer(file, options) {
     this.file = file;
-    this.num_chunks = Math.ceil(file.size / options.chunkSize);
-    this.init();
+    this.chunkSize = options.chunkSize;
   }
 
   FileTransfer.prototype = {
-    init: function() {
+    init: function(callback) {
+      this.numChunks = Math.ceil(this.file.size / this.chunkSize);
+      this.identify(callback);
+      this.announceAvailable();
+    },
+
+    /* Announce to endpoint that this file is available.
+     * Kicks off the one-way sync operation. */
+    announceAvailable: function() {
+      
+    },
+
+    /* Sets this.id to a string value based on name, head and tail chunks.
+     * Returns +this+ via callback */
+    identify: function(callback) {
+      var lastChunk = this.numChunks;
+      var name = this.file.name;
+      var done = function(first, last) {
+        this.id = md5(first+last+name);
+        callback(this);
+      }.bind(this);
+      this.md5Chunk(1, function(first) {
+        if (lastChunk > 1) { 
+          this.md5Chunk(lastChunk, function(last) {
+            done(first, last);
+          });
+        } else {
+          done(first, '');
+        }
+      }.bind(this));
+    },
+
+    /* Get the MD5 checksum for a specified chunk.
+     * Chunk number is not 0-based index; the first chunk is chunk 1 */
+    md5Chunk: function(num, callback) {
+      this.getChunk(num, function(blobData) { callback(md5(blobData)) });
+    },
+
+    /* Get the blob data for a specified chunk.
+     * Chunk number is not 0-based index; the first chunk is chunk 1 */
+    getChunk: function(chunkNumber, callback) {
+      var index = (chunkNumber-1);
+      var start = index * this.chunkSize;
+      var end = start + this.chunkSize; // what if it's beyond? does slice care?
+      var blob = this.file.slice(start, end);
+      var reader = new FileReader();
+      reader.onload = function(e) { callback(e.target.result) };
+      reader.readAsBinaryString(blob);
     }
   }
 
