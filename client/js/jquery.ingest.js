@@ -27,7 +27,7 @@
   var pluginName = "ingest",
   defaults = {
     propertyName: "value",
-    chunkSize: 5242880, // 5 megabytes in bytes, must use same at endpoint
+    chunkSize: 32768, // 32 kilobytes
     add: function() {},
     progress: function() {}
   };
