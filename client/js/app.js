@@ -1,8 +1,9 @@
 $(function() {
   $('input#ingest[type=file]').ingest({
     endpoint: "http://localhost:1337/",
-    progress: function(tx, percent) {
-      console.log(percent);
+    progress: function(tx, stage, percent) {
+      console.log(stage); // what is it doing? downloading? transcoding? etc
+      console.log(percent); // what is the overall percent ?
     },
     add: function(tx) {
       var item = $('<p data-id="'+tx.id+'">');
