@@ -82,7 +82,7 @@
     init: function(callback) {
       var url = URL(this.endpoint);
       this.fingerprint(function() {
-        url.pathname = '/transfers/'+this.id+'/events';
+        url.pathname = '/transfers/'+this.id+'/'+this.numChunks+'/events';
         eventsource = new EventSource(url.href);
         eventsource.addEventListener('sendChunk', this.sendChunk.bind(this));
         callback(this);
@@ -111,12 +111,12 @@
 
     /* Handle chunk requests from the server */
     sendChunk: function(e) {
-      var num = parseInt(e.data);
-      console.log("Server said send chunk " + num);
+      var chunkNumber = parseInt(e.data);
+      console.log("Server said send chunk " + chunkNumber);
       var url = URL(this.endpoint);
-      var blob = this.getChunk(num);
+      var blob = this.getChunk(chunkNumber);
       this.readChunk(blob, function(data) {
-        url.pathname = '/transfers/'+this.id+'/chunks/'+num+'/'+md5(data);
+        url.pathname = '/transfers/'+this.id+'/chunks/'+chunkNumber+'/'+md5(data);
         var formData = new FormData();
         formData.append('data', data);
         $.ajax({
@@ -126,10 +126,10 @@
           processData: false,
           contentType: false,
           success: function() {
-            console.log("successfully delivered chunk "+num);
+            console.log("successfully delivered chunk "+chunkNumber);
           },
           error: function() {
-            console.log("failed to deliver chunk "+num);
+            console.log("failed to deliver chunk "+chunkNumber);
           }
         });
       }.bind(this));
