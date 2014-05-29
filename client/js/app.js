@@ -1,13 +1,17 @@
 $(function() {
   $('input#ingest[type=file]').ingest({
     endpoint: "http://localhost:3000/ingest",
-    progress: function(percent) {
+    progress: function(tx, percent) {
       console.log(percent);
     },
     add: function(tx) {
-      console.log("Added file", tx.file.name);
-      console.log("Size: "+tx.file.size);
-      console.log("Num chunks: "+tx.num_chunks);
+      var item = $('<p data-id="'+tx.id+'">');
+      item.text(tx.file.name);
+      var progress = $("<span class=progress>")
+      progress.text('0%');
+      item.append(progress);
+      $('#transfers').append(item);
+      console.log(tx);
     }
   });
 });
