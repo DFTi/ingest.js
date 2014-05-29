@@ -52,13 +52,6 @@
   Ingest.prototype = {
 
     init: function() {
-      // Place initialization logic here
-      // You already have access to the DOM element and
-      // the options via
-      // the instance, e.g. this.element
-      // and this.options
-      // you can add more functions like the one below and
-      // call them like so: this.yourOtherFunction(this.element, this.options).
       $(this.element).on('change', this.inputFiles.bind(this));
     },
 
@@ -80,20 +73,30 @@
   function FileTransfer(file, options) {
     this.file = file;
     this.chunkSize = options.chunkSize;
+    this.numChunks = Math.ceil(this.file.size / this.chunkSize);
+    this.endpoint = options.endpoint;
   }
 
   FileTransfer.prototype = {
-    /* Fingerprint the file and callback with +this+ */
+    /* Fingerprint the file, register for events, and callback with +this+ */
     init: function(callback) {
-      this.numChunks = Math.ceil(this.file.size / this.chunkSize);
-      this.fingerprint(callback);
-      this.announceAvailable();
+      var url = URL(this.endpoint);
+      this.fingerprint(function() {
+        url.pathname = '/transfers/'+this.id+'/events';
+        eventsource = new EventSource(url.href);
+        eventsource.addEventListener('open', this.announceAvailable.bind(this));
+        eventsource.addEventListener('message', function(e) {
+          var json = JSON.parse(e.data);
+          console.log("got json", json);
+        }.bind(this));
+      }.bind(this));
     },
 
     /* Announce to endpoint that this file is available.
      * Kicks off the one-way sync operation. */
     announceAvailable: function() {
-      
+      console.log("available");
+      // post some metadata? 
     },
 
     /* Sets this.id to a string value based on name, head and tail chunks.
