@@ -49,9 +49,26 @@
       this.fingerprint(function() {
         url.pathname = '/transfers/'+this.id+'/'+this.numChunks+'/events';
         eventsource = new EventSource(url.href);
-        eventsource.addEventListener('sendChunk', this.sendChunk.bind(this));
+        eventsource.addEventListener('sendChunk', function(e) {
+          var chunkNumber = parseInt(e.data);
+          console.log("Server requested chunk " + chunkNumber);
+          this.sendChunk(chunkNumber);
+        }.bind(this));
+        eventsource.addEventListener('verifyChunk', function(e) {
+          var data = JSON.parse(e.data);
+          this.verifyChunk(data.chunkNumber, data.checkSum, function(checkSumOK) {
+            console.log(checkSumOK);
+          });
+        }.bind(this));
         callback(this);
       }.bind(this));
+    },
+
+    /* Callback true or false depending if the chunk matches the checksum */
+    verifyChunk: function(chunkNumber, remoteCheckSum, callback) {
+      this.md5Chunk(chunkNumber, function(checkSum) {
+        callback(checkSum === remoteCheckSum);
+      });
     },
 
     /* Sets this.id to a string value based on name, head and tail chunks.
@@ -76,8 +93,6 @@
 
     /* Handle chunk requests from the server */
     sendChunk: function(e) {
-      var chunkNumber = parseInt(e.data);
-      console.log("Server said send chunk " + chunkNumber);
       var url = URL(this.endpoint);
       var blob = this.getChunk(chunkNumber);
       this.readChunk(blob, function(data) {
