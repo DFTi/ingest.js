@@ -34,7 +34,7 @@ Requestor.prototype = {
           } else {
             console.log("verify");
             this._emit("verifyChunk", {
-              checkSum: SparkMD5.hash(blob),
+              checkSum: (blob.length > 0 ? SparkMD5.hash(blob) : ''),
               chunkNumber: chunkNumber
             });
           }
@@ -90,9 +90,14 @@ Requestor.prototype = {
         });
       });
       d.on('finish', function() {
-        // write to file
-        fs.closeSync(fd);
-        done(spark.end() === targetMd5);
+        var position = (chunkNumber-1) * CHUNKSIZE;
+        fs.write(fd, buffer, 0, buffer.length, position, function(err, written, buff) {
+          if (err) { done(false) }
+          else {
+            fs.closeSync(fd);
+            done(spark.end() === targetMd5);
+          }
+        });
       });
       req.pipe(d);
     });
