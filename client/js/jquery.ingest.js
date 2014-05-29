@@ -89,32 +89,6 @@
       }.bind(this));
     },
 
-    /* Handle chunk requests from the server */
-    sendChunk: function(e) {
-      var num = parseInt(e.data);
-      console.log("Server said send chunk " + num);
-      var blob = this.getChunk(num);
-      var formData = new FormData();
-      var url = URL(this.endpoint);
-      this.md5Chunk(num, function(md5sum) {
-        url.pathname = '/transfers/'+this.id+'/chunks/'+num+'/'+md5sum;
-        formData.append('data', blob);
-        $.ajax({
-          url: url.href,
-          type: 'post',
-          data: formData,
-          processData: false,
-          contentType: false,
-          success: function() {
-            console.log("successfully delivered chunk "+num);
-          },
-          error: function() {
-            console.log("failed to deliver chunk "+num);
-          }
-        });
-      }.bind(this));
-    },
-
     /* Sets this.id to a string value based on name, head and tail chunks.
      * Returns +this+ via callback */
     fingerprint: function(callback) {
@@ -132,6 +106,32 @@
         } else {
           done(first, '');
         }
+      }.bind(this));
+    },
+
+    /* Handle chunk requests from the server */
+    sendChunk: function(e) {
+      var num = parseInt(e.data);
+      console.log("Server said send chunk " + num);
+      var url = URL(this.endpoint);
+      var blob = this.getChunk(num);
+      this.readChunk(blob, function(data) {
+        url.pathname = '/transfers/'+this.id+'/chunks/'+num+'/'+md5(data);
+        var formData = new FormData();
+        formData.append('data', data);
+        $.ajax({
+          url: url.href,
+          type: 'post',
+          data: formData,
+          processData: false,
+          contentType: false,
+          success: function() {
+            console.log("successfully delivered chunk "+num);
+          },
+          error: function() {
+            console.log("failed to deliver chunk "+num);
+          }
+        });
       }.bind(this));
     },
 
