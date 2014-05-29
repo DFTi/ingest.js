@@ -11,7 +11,6 @@ $(function() {
       progress.text('0%');
       item.append(progress);
       $('#transfers').append(item);
-      console.log(tx);
     }
   });
 });
