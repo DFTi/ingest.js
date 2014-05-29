@@ -84,17 +84,36 @@
       this.fingerprint(function() {
         url.pathname = '/transfers/'+this.id+'/events';
         eventsource = new EventSource(url.href);
-        eventsource.addEventListener('message', function(e) {
-          var json = JSON.parse(e.data);
-          this.handleMessage(json);
-        }.bind(this));
+        eventsource.addEventListener('sendChunk', this.sendChunk.bind(this));
         callback(this);
       }.bind(this));
     },
 
-    /* Handle JSON coming from the ingest server */
-    handleMessage: function(json) {
-      console.log("got json", json);
+    /* Handle chunk requests from the server */
+    sendChunk: function(e) {
+      var num = parseInt(e.data);
+      console.log("Server said send chunk " + num);
+      var blob = this.getChunk(num);
+      var formData = new FormData();
+      var url = URL(this.endpoint);
+      url.pathname = '/transfers/'+this.id+'/chunks/'+num;
+      this.md5Chunk(num, function(md5sum) {
+        formData.append('data', blob);
+        formData.append('md5sum', md5sum);
+        $.ajax({
+          url: url.href,
+          type: 'post',
+          data: formData,
+          processData: false,
+          contentType: false,
+          success: function() {
+            console.log("successfully delivered chunk "+num);
+          },
+          error: function() {
+            console.log("failed to deliver chunk "+num);
+          }
+        });
+      });
     },
 
     /* Sets this.id to a string value based on name, head and tail chunks.
@@ -120,16 +139,21 @@
     /* Get the MD5 checksum for a specified chunk.
      * Chunk number is not 0-based index; the first chunk is chunk 1 */
     md5Chunk: function(num, callback) {
-      this.getChunk(num, function(blobData) { callback(md5(blobData)) });
+      this.readChunk(this.getChunk(num), function(data) {
+        callback(md5(data));
+      }); 
     },
 
     /* Get the blob data for a specified chunk.
      * Chunk number is not 0-based index; the first chunk is chunk 1 */
-    getChunk: function(chunkNumber, callback) {
+    getChunk: function(chunkNumber) {
       var index = (chunkNumber-1);
       var start = index * this.chunkSize;
       var end = start + this.chunkSize; // what if it's beyond? does slice care?
-      var blob = this.file.slice(start, end);
+      return this.file.slice(start, end);
+    },
+
+    readChunk: function(blob, callback) {
       var reader = new FileReader();
       reader.onload = function(e) { callback(e.target.result) };
       reader.readAsBinaryString(blob);
