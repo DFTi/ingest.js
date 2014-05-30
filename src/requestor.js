@@ -1,69 +1,54 @@
 var path = require('path');
-var SparkMD5 = require("../common/md5");
+var md5 = require('MD5');
 var fs = require('fs');
 var path = require('path');
 var Dicer = require('dicer');
 var RE_BOUNDARY = /^multipart\/.+?(?:; boundary=(?:(?:"(.+)")|(?:([^\s]+))))$/i;
 var CHUNKSIZE = 32768;
+var mkTempDir = require('./temp_dir.js');
 
 var Requestor = function(options, res) {
   this.id = options.id;
-  this.bin = path.join(options.tmp, this.id+".bin");
   this.res = res;
   this.numChunks = parseInt(options.numChunks);
-  this.init();
+  this.chunksDir = path.join(options.tmp, this.id);
+  mkTempDir(this.chunksDir, this.init.bind(this));
 };
 
 Requestor.prototype = {
   init: function() {
-    fs.stat(this.bin, function(err, stats) {
+    console.log("init");
+    this.eachChunk(function(err, chunkNumber, chunkPath) {
+      console.log("Each chunk");
       if (err) {
-        // the file doesn't exist
-        // create it and request the first chunk
-        fs.closeSync(fs.openSync(this.bin, 'w')); // touch and truncate
-        console.log("Created empty "+this.bin);
-        this.requestChunk(1);
+        console.log("err");
+        this.requestChunk(chunkNumber);
       } else {
-        console.log("File exist "+this.bin);
-        // the file exists
-        // report the md5 for each chunk that we have
-        this.eachChunk(function(err, chunkNumber, blob) {
-          if (err) {
-            console.log("err");
-            this.requestChunk(chunkNumber);
-          } else {
-            console.log("verify");
-            this._emit("verifyChunk", {
-              checkSum: (blob.length > 0 ? SparkMD5.hash(blob) : ''),
-              chunkNumber: chunkNumber
-            });
-          }
-        }.bind(this));
+        console.log("verify");
+        this._emit("verifyChunk", {
+          checkSum: this._chunkChecksum(chunkNumber),
+          chunkNumber: chunkNumber
+        });
       }
     }.bind(this));
   },
 
-  /* Takes a file descriptor, a chunk number, and a callback
-   * Calls back with error, chunkNumber, buffer */
-  returnChunk: function(fd, chunkNumber, callback) {
-    var buffer = new Buffer(CHUNKSIZE);
-    var start = (chunkNumber-1) * CHUNKSIZE;
-    fs.read(fd, buffer, 0, CHUNKSIZE, start, function(err, bytesRead, buff) {
+  /* Takes a chunk number, and a callback
+   * Calls back with error, chunkNumber, chunkPath */
+  returnChunk: function(chunkNumber, callback) {
+    var cPath = this._path(chunkNumber);
+    fs.stat(cPath, function(err, stats) {
       if (err) {
         callback(err, chunkNumber, null);
       } else {
-        callback(null, chunkNumber, buff);
+        callback(null, chunkNumber, cPath);
       } 
-    });
+    })
   },
 
-  /* Iterate over all the chunks we have saved locally
-   * and callback with the buffer and index */
   eachChunk: function(callback) {
-    fs.open(this.bin, 'r', function(err, fd) {
-      for (var i = 1, l = this.numChunks; i <= l; i ++)
-        this.returnChunk(fd, i, callback);
-    }.bind(this));
+    for (var i = 1, l = this.numChunks; i <= l; i ++)
+      this.returnChunk(i, callback);
   },
 
   /* Request a single chunk.
@@ -75,32 +60,36 @@ Requestor.prototype = {
 
   /* Accept a chunk from the multipart request object
    * write it to the binary at the correct place and
-   * callback true or false telling if md5 matched */
-  receiveChunk: function(chunkNumber, targetMd5, req, done) {
+   * respond appropriately depending on match */
+  receiveChunk: function(chunkNumber, targetMd5, req, res) {
     console.log("Receiving chunk "+chunkNumber);
     var m = RE_BOUNDARY.exec(req.headers['content-type']);
     var d = new Dicer({ boundary: m[1] || m[2] });
-    var buffer = null;
-    fs.open(this.bin, 'r+', function(err, fd) {
-      var spark = new SparkMD5();
-      d.on('part', function(p) {
-        p.on('data', function(data) {
-          buffer = data;
-          spark.append(buffer);
-        });
-      });
-      d.on('finish', function() {
-        var position = (chunkNumber-1) * CHUNKSIZE;
-        fs.write(fd, buffer, 0, buffer.length, position, function(err, written, buff) {
-          if (err) { done(false) }
-          else {
-            fs.closeSync(fd);
-            done(spark.end() === targetMd5);
-          }
-        });
-      });
-      req.pipe(d);
+    var cPath = this._path(chunkNumber);
+    var writeStream = fs.createWriteStream(cPath);
+    d.on('part', function(p) {
+      p.pipe(writeStream);
     });
+    d.on('finish', function() {
+      var checkSum = this._chunkChecksum(chunkNumber);
+      console.log("TargetChecksum: "+targetMd5);
+      console.log("LocalChecksum: "+checkSum);
+      if (checkSum === targetMd5) {
+        res.statusCode = 204;
+      } else {
+        res.statusCode = 406;
+      }
+      res.end();
+    }.bind(this));
+    req.pipe(d);
+  },
+
+  _chunkChecksum: function(chunkNumber) {
+    return md5(fs.readFileSync(this._path(chunkNumber)));
+  },
+
+  _path: function(chunkNumber) {
+    return path.join(this.chunksDir, chunkNumber.toString());
   },
 
   _emit: function(event, data) {

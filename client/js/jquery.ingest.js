@@ -113,9 +113,12 @@
           success: function() {
             console.log("successfully delivered chunk "+chunkNumber);
           },
-          error: function() {
-            console.log("failed to deliver chunk "+chunkNumber);
-          }
+          error: function(e) {
+            if (e.status === 406) {
+              console.log("Chunk corrupted in transit. Will retry");
+              setTimeout(function() {  this.sendChunk(chunkNumber);  }.bind(this), 2000);
+            }
+          }.bind(this)
         });
       }.bind(this));
     },
@@ -123,9 +126,11 @@
     /* Get the MD5 checksum for a specified chunk.
      * Chunk number is not 0-based index; the first chunk is chunk 1 */
     md5Chunk: function(num, callback) {
-      this.readChunk(this.getChunk(num), function(data) {
-        callback(md5(data));
-      }); 
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        callback(SparkMD5.ArrayBuffer.hash(e.target.result));
+      };
+      reader.readAsArrayBuffer(this.getChunk(num));
     },
 
     /* Get the blob data for a specified chunk.

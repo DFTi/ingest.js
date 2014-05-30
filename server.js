@@ -3,6 +3,7 @@ var http = require("http");
 var url  = require("url");
 var fs = require('fs');
 var path = require('path');
+var tempDir = require('./src/temp_dir.js');
 var tempDirectory = path.resolve('./tmp');
 var Requestor = require('./src/requestor.js');
 
@@ -26,12 +27,10 @@ http.createServer(function (req, res) {
     var chunkNumber = match[2];
     var chunkMd5 = match[3];
     var rx = requestors[match[1]];
-    if (rx === null) { res.writeHead(500); res.end(); }
-    else {
-      rx.receiveChunk(chunkNumber, chunkMd5, req, function(checksumOK) {
-        res.statusCode = (checksumOK ? 204 : 406);
-        res.end();
-      });
+    if (rx) {
+      rx.receiveChunk(chunkNumber, chunkMd5, req, res);
+    } else { 
+      res.writeHead(500); res.end();
     }
   } else if ((match = pathname.match(routes.events)) && req.method === "GET") {
     res.writeHead(200, {
@@ -56,12 +55,4 @@ http.createServer(function (req, res) {
 console.log("Server running at http://0.0.0.0:"+PORT+"/");
 
 // Setup temp directory
-fs.stat(tempDirectory, function(err, stats) {
-  if (err) {
-    fs.mkdir(tempDirectory);
-  } else {
-    if (!stats.isDirectory()) {
-      throw new Error(tempDirectory+" is not a directory!");
-    }
-  }
-});
+tempDir(tempDirectory);
